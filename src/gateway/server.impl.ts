@@ -49,7 +49,7 @@ import { createChannelManager } from "./server-channels.js";
 import { createAgentEventHandler } from "./server-chat.js";
 import { createGatewayCloseHandler } from "./server-close.js";
 import { buildGatewayCronService } from "./server-cron.js";
-import { registerContextMaintenanceCron } from "../infra/context-maintenance-scheduler.js";
+import { startContextMaintenanceTimer } from "../infra/context-maintenance-scheduler.js";
 import { startGatewayDiscovery } from "./server-discovery-runtime.js";
 import { applyGatewayLaneConcurrency } from "./server-lanes.js";
 import { startGatewayMaintenanceTimers } from "./server-maintenance.js";
@@ -458,8 +458,8 @@ export async function startGatewayServer(
 
   void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
   
-  // 注册上下文维护定时任务
-  registerContextMaintenanceCron(cron);
+  // 启动上下文维护定时器
+  const contextMaintenanceTimer = startContextMaintenanceTimer();
 
   const execApprovalManager = new ExecApprovalManager();
   const execApprovalForwarder = createExecApprovalForwarder();
@@ -609,6 +609,7 @@ export async function startGatewayServer(
     tickInterval,
     healthInterval,
     dedupeCleanup,
+    contextMaintenanceTimer,
     agentUnsub,
     heartbeatUnsub,
     chatRunState,

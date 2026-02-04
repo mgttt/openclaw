@@ -61,23 +61,28 @@ export async function runContextMaintenance(): Promise<void> {
 }
 
 /**
- * 注册 Cron 任务
+ * 启动上下文维护定时器
+ * 
+ * 使用 setInterval 而不是 cron，因为这是后台维护任务，不需要会话交互
  */
-export function registerContextMaintenanceCron(cron: any): void {
+export function startContextMaintenanceTimer(): ReturnType<typeof setInterval> {
   const intervalMs = DEFAULT_MAINTENANCE_CONFIG.scanIntervalMs;
   
-  cron.add({
-    name: "context-maintenance-scan",
-    schedule: { 
-      kind: "every", 
-      everyMs: intervalMs 
-    },
-    sessionTarget: "main",
-    payload: {
-      kind: "systemEvent",
-      text: "执行上下文维护扫描"
-    }
+  log(`[Timer] 启动定时器，间隔 ${intervalMs / 1000 / 60} 分钟`);
+  
+  // 立即执行一次
+  void runContextMaintenance().catch(err => {
+    const error = err instanceof Error ? err.message : String(err);
+    log(`[Error] 初始扫描失败: ${error}`);
   });
   
-  log(`[Cron] 已注册，间隔 ${intervalMs / 1000 / 60} 分钟`);
+  // 定时执行
+  const timer = setInterval(() => {
+    void runContextMaintenance().catch(err => {
+      const error = err instanceof Error ? err.message : String(err);
+      log(`[Error] 定时扫描失败: ${error}`);
+    });
+  }, intervalMs);
+  
+  return timer;
 }

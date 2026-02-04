@@ -81,13 +81,13 @@ export const dispatchTelegramMessage = async ({
     `threadId=${draftThreadId} (type=${typeof draftThreadId})`
   );
   
-  // For private chats, we don't need Topics enabled (it's a group feature)
-  // For groups, we still check if bot supports Topics
+  // For private chats, we don't need Topics enabled or threadId check
+  // Draft streaming works by editing the same message repeatedly
   const canStreamDraft =
     streamMode !== "off" &&
-    isPrivateChat &&
-    typeof draftThreadId === "number" &&
-    (isPrivateChat || (await resolveBotTopicsEnabled(primaryCtx)));
+    isPrivateChat;
+    // No threadId check needed - private chats don't use forum topics
+    // No Topics check needed - that's only for forum groups
   
   logVerbose(`[Draft Stream] canStreamDraft=${canStreamDraft}`);
   const draftStream = canStreamDraft
