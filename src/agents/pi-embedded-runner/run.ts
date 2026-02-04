@@ -312,6 +312,8 @@ export async function runEmbeddedPiAgent(
           const prompt =
             provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt;
 
+          const statePrompt = await loadSessionStatePrompt(params.sessionFile);
+
           const attempt = await runEmbeddedAttempt({
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
@@ -361,7 +363,7 @@ export async function runEmbeddedPiAgent(
             onReasoningStream: params.onReasoningStream,
             onToolResult: params.onToolResult,
             onAgentEvent: params.onAgentEvent,
-            extraSystemPrompt: params.extraSystemPrompt,
+            extraSystemPrompt: mergeExtraSystemPrompt(params.extraSystemPrompt, statePrompt),
             streamParams: params.streamParams,
             ownerNumbers: params.ownerNumbers,
             enforceFinalTag: params.enforceFinalTag,
@@ -689,4 +691,76 @@ export async function runEmbeddedPiAgent(
       }
     }),
   );
+}
+
+function mergeExtraSystemPrompt(
+  existing: string | undefined,
+  injected: string | undefined,
+): string | undefined {
+  const a = (existing ?? "").trim();
+  const b = (injected ?? "").trim();
+  const merged = [a, b].filter(Boolean).join("\n\n").trim();
+  return merged.length ? merged : undefined;
+}
+
+async function loadSessionStatePrompt(
+  sessionFile: string | undefined,
+): Promise<string | undefined> {
+  if (!sessionFile) {
+    return undefined;
+  }
+  const statePath = `${sessionFile}.state.json`;
+  try {
+    const raw = await fs.readFile(statePath, "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") {
+      return undefined;
+    }
+
+    const pickStr = (k: string) => {
+      const v = parsed[k];
+      return typeof v === "string" ? v.trim() : "";
+    };
+    const pickArr = (k: string) => {
+      const v = parsed[k];
+      if (!Array.isArray(v)) {
+        return [];
+      }
+      return v
+        .filter((x): x is string => typeof x === "string")
+        .map((x) => x.trim())
+        .filter(Boolean);
+    };
+
+    const lines: string[] = [];
+    lines.push("# Session State (external, preventive)");
+
+    const task = pickStr("task");
+    if (task) {
+      lines.push(`- task: ${task.slice(0, 240)}`);
+    }
+
+    const addList = (label: string, items: string[]) => {
+      const slice = items.slice(0, 12);
+      if (!slice.length) {
+        return;
+      }
+      lines.push(`- ${label}:`);
+      for (const it of slice) {
+        lines.push(`  - ${it.slice(0, 280)}`);
+      }
+    };
+
+    addList("next_actions", pickArr("next_actions"));
+    addList("constraints", pickArr("constraints"));
+    addList("decisions", pickArr("decisions"));
+    addList("open_questions", pickArr("open_questions"));
+    addList("artifacts", pickArr("artifacts"));
+
+    const text = lines.join("\n");
+    const maxChars = 1800;
+    return text.length <= maxChars ? text : text.slice(0, maxChars - 20) + "\n…(truncated)";
+  } catch {
+    return undefined;
+  }
 }
