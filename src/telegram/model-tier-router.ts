@@ -52,7 +52,7 @@ export function resolveTierRoutingConfig(
   if (envDisabled) {
     return {
       enabled: false,
-      quick: { provider: "anthropic", model: "claude-haiku-4" },
+      quick: { provider: "anthropic", model: "claude-haiku-4-5" },
       standard: { provider: "anthropic", model: "claude-sonnet-4-5" },
       deep: { provider: "anthropic", model: "claude-sonnet-4-5" },
     };
@@ -66,7 +66,7 @@ export function resolveTierRoutingConfig(
     enabled: tierCfg?.enabled ?? true, // Enabled by default
     quick: tierCfg?.quick ?? {
       provider: "anthropic",
-      model: "claude-haiku-4",
+      model: "claude-haiku-4-5",
     },
     standard: tierCfg?.standard ?? {
       provider: "anthropic",
