@@ -1,12 +1,12 @@
 /**
  * Model Tier Router for Telegram
- * 
+ *
  * Routes messages to appropriate model tiers based on complexity,
  * enabling significant cost reduction while maintaining quality.
  */
 
-import type { OpenClawConfig } from "../config/config.js";
 import type { ModelRef } from "../agents/model-selection.js";
+import type { OpenClawConfig } from "../config/config.js";
 import { analyzeMessageComplexity, type ComplexityScore } from "./message-complexity-analyzer.js";
 
 export type ModelTier = {
@@ -53,7 +53,7 @@ export function resolveTierRoutingConfig(
     return {
       enabled: false,
       quick: { provider: "anthropic", model: "claude-haiku-4" },
-      standard: { provider: "anthropic", model: "claude-sonnet-4" },
+      standard: { provider: "anthropic", model: "claude-sonnet-4-5" },
       deep: { provider: "anthropic", model: "claude-sonnet-4-5" },
     };
   }
@@ -70,7 +70,7 @@ export function resolveTierRoutingConfig(
     },
     standard: tierCfg?.standard ?? {
       provider: "anthropic",
-      model: "claude-sonnet-4",
+      model: "claude-sonnet-4-5",
     },
     deep: tierCfg?.deep ?? {
       provider: "anthropic",

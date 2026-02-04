@@ -24,6 +24,8 @@ export type AgentConfig = {
   workspace?: string;
   agentDir?: string;
   model?: AgentModelConfig;
+  /** Optional per-agent prompt caching config (Anthropic-only; ignored for other providers). */
+  promptCaching?: AgentDefaultsConfig["promptCaching"];
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */
   skills?: string[];
   memorySearch?: MemorySearchConfig;

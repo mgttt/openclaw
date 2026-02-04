@@ -41,6 +41,22 @@ export const AgentDefaultsSchema = z
           .strict(),
       )
       .optional(),
+    // Anthropic Prompt Caching (ignored for providers that don't support it)
+    // Allowed values:
+    // - "aggressive" | "conservative" | "disabled"
+    // - { enabled?: boolean, strategy?: "aggressive"|"conservative"|"disabled", minHistoryForCache?: number }
+    promptCaching: z
+      .union([
+        z.enum(["aggressive", "conservative", "disabled"]),
+        z
+          .object({
+            enabled: z.boolean().optional(),
+            strategy: z.enum(["aggressive", "conservative", "disabled"]).optional(),
+            minHistoryForCache: z.number().int().nonnegative().optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
     workspace: z.string().optional(),
     repoRoot: z.string().optional(),
     skipBootstrap: z.boolean().optional(),

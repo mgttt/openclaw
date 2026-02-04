@@ -428,6 +428,18 @@ export const AgentEntrySchema = z
     workspace: z.string().optional(),
     agentDir: z.string().optional(),
     model: AgentModelSchema.optional(),
+    promptCaching: z
+      .union([
+        z.enum(["aggressive", "conservative", "disabled"]),
+        z
+          .object({
+            enabled: z.boolean().optional(),
+            strategy: z.enum(["aggressive", "conservative", "disabled"]).optional(),
+            minHistoryForCache: z.number().int().nonnegative().optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
     skills: z.array(z.string()).optional(),
     memorySearch: MemorySearchSchema,
     humanDelay: HumanDelaySchema.optional(),
