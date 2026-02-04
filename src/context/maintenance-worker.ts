@@ -39,7 +39,7 @@ export class ContextMaintenanceWorker {
           score: assessment.score,
         });
         
-        log(
+        log.debug(
           `[Scan] ${sessionKey}: score=${assessment.score}, ` +
           `urgent=${assessment.urgent}, reasons=${assessment.reasons.join(", ")}`
         );
@@ -56,7 +56,7 @@ export class ContextMaintenanceWorker {
    * 执行整理
    */
   async maintain(sessionKey: string, session: SessionEntry): Promise<MaintenanceResult> {
-    log(`[Maintain] 开始整理 ${sessionKey}`);
+    log.info(`[Maintain] 开始整理 ${sessionKey}`);
     
     const before = {
       totalTokens: session.totalTokens || 0,
@@ -76,7 +76,7 @@ export class ContextMaintenanceWorker {
       });
       
       if (!result.ok) {
-        log(`[Maintain] 整理失败 ${sessionKey}: ${result.reason}`);
+        log.warn(`[Maintain] 整理失败 ${sessionKey}: ${result.reason}`);
         return {
           ok: false,
           sessionKey,
@@ -86,7 +86,7 @@ export class ContextMaintenanceWorker {
       }
       
       if (!result.compacted) {
-        log(`[Maintain] 跳过整理 ${sessionKey}: ${result.reason}`);
+        log.info(`[Maintain] 跳过整理 ${sessionKey}: ${result.reason}`);
         return {
           ok: true,
           sessionKey,
@@ -105,7 +105,7 @@ export class ContextMaintenanceWorker {
       
       const savedTokens = before.totalTokens - after.totalTokens;
       
-      log(
+      log.info(
         `[Maintain] 完成整理 ${sessionKey}: ` +
         `节省 ${savedTokens} tokens (${before.totalTokens} → ${after.totalTokens})`
       );
@@ -121,7 +121,7 @@ export class ContextMaintenanceWorker {
       
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      log(`[Maintain] 异常 ${sessionKey}: ${error}`);
+      log.error(`[Maintain] 异常 ${sessionKey}: ${error}`);
       
       return {
         ok: false,

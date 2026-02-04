@@ -13,7 +13,7 @@ const log = createSubsystemLogger("infra/context-maintenance");
  * 执行上下文维护
  */
 export async function runContextMaintenance(): Promise<void> {
-  log("[Scan] 开始扫描...");
+  log.info("[Scan] 开始扫描...");
   
   const config = await loadConfig();
   const workspaceDir = resolveAgentWorkspaceDir(config);
@@ -24,10 +24,10 @@ export async function runContextMaintenance(): Promise<void> {
     // 轻量级扫描
     const sessions = await worker.scan();
     
-    log(`[Scan] 发现 ${sessions.length} 个需要整理的会话`);
+    log.info(`[Scan] 发现 ${sessions.length} 个需要整理的会话`);
     
     if (sessions.length === 0) {
-      log("[Scan] 无需整理，跳过");
+      log.info("[Scan] 无需整理，跳过");
       return;
     }
     
@@ -35,7 +35,7 @@ export async function runContextMaintenance(): Promise<void> {
     const urgent = sessions.filter(s => s.score >= DEFAULT_MAINTENANCE_CONFIG.thresholds.urgent);
     
     for (const { sessionKey, session } of urgent) {
-      log(`[Urgent] 整理 ${sessionKey} (score=${session.score})`);
+      log.info(`[Urgent] 整理 ${sessionKey} (score=${session.score})`);
       await worker.maintain(sessionKey, session);
     }
     
@@ -48,15 +48,15 @@ export async function runContextMaintenance(): Promise<void> {
       .slice(0, 5);  // 每轮最多 5 个
     
     for (const { sessionKey, session } of high) {
-      log(`[High] 整理 ${sessionKey} (score=${session.score})`);
+      log.info(`[High] 整理 ${sessionKey} (score=${session.score})`);
       await worker.maintain(sessionKey, session);
     }
     
-    log(`[Scan] 完成，处理了 ${urgent.length + high.length} 个会话`);
+    log.info(`[Scan] 完成，处理了 ${urgent.length + high.length} 个会话`);
     
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    log(`[Error] 维护失败: ${error}`);
+    log.error(`[Error] 维护失败: ${error}`);
   }
 }
 
@@ -68,19 +68,19 @@ export async function runContextMaintenance(): Promise<void> {
 export function startContextMaintenanceTimer(): ReturnType<typeof setInterval> {
   const intervalMs = DEFAULT_MAINTENANCE_CONFIG.scanIntervalMs;
   
-  log(`[Timer] 启动定时器，间隔 ${intervalMs / 1000 / 60} 分钟`);
+  log.info(`[Timer] 启动定时器，间隔 ${intervalMs / 1000 / 60} 分钟`);
   
   // 立即执行一次
   void runContextMaintenance().catch(err => {
     const error = err instanceof Error ? err.message : String(err);
-    log(`[Error] 初始扫描失败: ${error}`);
+    log.error(`[Error] 初始扫描失败: ${error}`);
   });
   
   // 定时执行
   const timer = setInterval(() => {
     void runContextMaintenance().catch(err => {
       const error = err instanceof Error ? err.message : String(err);
-      log(`[Error] 定时扫描失败: ${error}`);
+      log.error(`[Error] 定时扫描失败: ${error}`);
     });
   }, intervalMs);
   
