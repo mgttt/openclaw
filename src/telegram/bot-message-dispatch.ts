@@ -74,11 +74,13 @@ export const dispatchTelegramMessage = async ({
   const isPrivateChat = msg.chat.type === "private";
   const draftThreadId = threadSpec.id;
   const draftMaxChars = Math.min(textLimit, 4096);
+  // For private chats, we don't need Topics enabled (it's a group feature)
+  // For groups, we still check if bot supports Topics
   const canStreamDraft =
     streamMode !== "off" &&
     isPrivateChat &&
     typeof draftThreadId === "number" &&
-    (await resolveBotTopicsEnabled(primaryCtx));
+    (isPrivateChat || (await resolveBotTopicsEnabled(primaryCtx)));
   const draftStream = canStreamDraft
     ? createTelegramDraftStream({
         api: bot.api,
