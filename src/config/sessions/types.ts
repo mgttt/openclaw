@@ -4,6 +4,7 @@ import type { NormalizedChatType } from "../../channels/chat-type.js";
 import type { ChannelId } from "../../channels/plugins/types.js";
 import type { DeliveryContext } from "../../utils/delivery-context.js";
 import type { TtsAutoMode } from "../types.tts.js";
+import type { SessionMaintenanceMetadata } from "../../context/types.js";
 
 export type SessionScope = "per-sender" | "global";
 
@@ -93,6 +94,8 @@ export type SessionEntry = {
   lastThreadId?: string | number;
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
+  /** 上下文维护元数据（异步整理系统） */
+  contextMaintenance?: SessionMaintenanceMetadata;
 };
 
 export function mergeSessionEntry(
