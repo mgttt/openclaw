@@ -2,13 +2,13 @@
 
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions/types.js";
-import { loadSessionStore, updateSessionStore } from "../config/sessions/store.js";
-import { resolveStorePath } from "../config/sessions/paths.js";
-import { compactEmbeddedPiSession } from "../agents/pi-embedded-runner/compact.js";
 import { resolveOpenClawAgentDir } from "../agents/agent-paths.js";
-import { assessWorthiness } from "./worthiness-assessor.js";
-import { DEFAULT_MAINTENANCE_CONFIG, type MaintenanceResult } from "./types.js";
+import { compactEmbeddedPiSession } from "../agents/pi-embedded-runner/compact.js";
+import { resolveStorePath } from "../config/sessions/paths.js";
+import { loadSessionStore, updateSessionStore } from "../config/sessions/store.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { DEFAULT_MAINTENANCE_CONFIG, type MaintenanceResult } from "./types.js";
+import { assessWorthiness } from "./worthiness-assessor.js";
 
 const log = createSubsystemLogger("context/maintenance");
 
@@ -19,36 +19,55 @@ export class ContextMaintenanceWorker {
   ) {}
 
   /**
-   * 轻量级扫描所有会话
+   * 轻量级扫描所有会话（兼容旧逻辑）
    */
   async scan(): Promise<Array<{ session: SessionEntry; sessionKey: string; score: number }>> {
     const storePath = resolveStorePath(this.workspaceDir);
-    const store = await loadSessionStore(storePath);
-    
-    const results = [];
-    
+    const store = loadSessionStore(storePath);
+
+    const results: Array<{ session: SessionEntry; sessionKey: string; score: number }> = [];
+    const pendingPatches: Record<string, SessionEntry> = {};
+
     for (const [sessionKey, session] of Object.entries(store)) {
-      if (!session || !session.sessionFile) continue;
-      
+      if (!session || !session.sessionFile) {
+        continue;
+      }
+
       const assessment = assessWorthiness(session, this.config);
-      
+
       if (assessment.score >= DEFAULT_MAINTENANCE_CONFIG.thresholds.medium) {
-        results.push({
-          session,
-          sessionKey,
-          score: assessment.score,
-        });
-        
+        results.push({ session, sessionKey, score: assessment.score });
+
+        // Low-cost prewarning: mark high+ sessions as pending so scheduler can focus.
+        if (
+          assessment.score >= DEFAULT_MAINTENANCE_CONFIG.thresholds.high &&
+          !session.contextMaintenance?.pending
+        ) {
+          pendingPatches[sessionKey] = {
+            ...session,
+            contextMaintenance: {
+              ...(session.contextMaintenance ? { ...session.contextMaintenance } : {}),
+              pending: true,
+              pendingSince: Date.now(),
+              pendingScore: assessment.score,
+            },
+          };
+        }
+
         log.debug(
           `[Scan] ${sessionKey}: score=${assessment.score}, ` +
-          `urgent=${assessment.urgent}, reasons=${assessment.reasons.join(", ")}`
+            `urgent=${assessment.urgent}, reasons=${assessment.reasons.join(", ")}`,
         );
       }
     }
-    
+
+    if (Object.keys(pendingPatches).length > 0) {
+      await updateSessionStore(pendingPatches, storePath);
+    }
+
     // 按评分排序（高优先级优先）
     results.sort((a, b) => b.score - a.score);
-    
+
     return results;
   }
 
@@ -57,12 +76,12 @@ export class ContextMaintenanceWorker {
    */
   async maintain(sessionKey: string, session: SessionEntry): Promise<MaintenanceResult> {
     log.info(`[Maintain] 开始整理 ${sessionKey}`);
-    
+
     const before = {
       totalTokens: session.totalTokens || 0,
       compactionCount: session.compactionCount || 0,
     };
-    
+
     try {
       // 复用现有的 compaction API
       const result = await compactEmbeddedPiSession({
@@ -74,7 +93,7 @@ export class ContextMaintenanceWorker {
         provider: session.modelProvider || session.providerOverride,
         model: session.model || session.modelOverride,
       });
-      
+
       if (!result.ok) {
         log.warn(`[Maintain] 整理失败 ${sessionKey}: ${result.reason}`);
         return {
@@ -84,7 +103,7 @@ export class ContextMaintenanceWorker {
           reason: result.reason,
         };
       }
-      
+
       if (!result.compacted) {
         log.info(`[Maintain] 跳过整理 ${sessionKey}: ${result.reason}`);
         return {
@@ -94,22 +113,22 @@ export class ContextMaintenanceWorker {
           reason: result.reason,
         };
       }
-      
+
       // 更新元数据
       await this.updateMetadata(sessionKey, session, result);
-      
+
       const after = {
         totalTokens: result.inputTokens || before.totalTokens,
         compactionCount: result.compactionCount || before.compactionCount,
       };
-      
+
       const savedTokens = before.totalTokens - after.totalTokens;
-      
+
       log.info(
         `[Maintain] 完成整理 ${sessionKey}: ` +
-        `节省 ${savedTokens} tokens (${before.totalTokens} → ${after.totalTokens})`
+          `节省 ${savedTokens} tokens (${before.totalTokens} → ${after.totalTokens})`,
       );
-      
+
       return {
         ok: true,
         sessionKey,
@@ -118,11 +137,10 @@ export class ContextMaintenanceWorker {
         after,
         savedTokens,
       };
-      
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       log.error(`[Maintain] 异常 ${sessionKey}: ${error}`);
-      
+
       return {
         ok: false,
         sessionKey,
@@ -138,23 +156,57 @@ export class ContextMaintenanceWorker {
   private async updateMetadata(
     sessionKey: string,
     session: SessionEntry,
-    compactionResult: any,
+    compactionResult: { inputTokens?: number; compactionCount?: number },
   ): Promise<void> {
     const assessment = assessWorthiness(session, this.config);
-    
+
     const storePath = resolveStorePath(this.workspaceDir);
-    
-    await updateSessionStore({
-      [sessionKey]: {
-        ...session,
-        totalTokens: compactionResult.inputTokens,
-        compactionCount: compactionResult.compactionCount,
-        contextMaintenance: {
-          lastRun: Date.now(),
-          lastScore: assessment.score,
-          // summary: ...,  // 预留
+
+    await updateSessionStore(
+      {
+        [sessionKey]: {
+          ...session,
+          totalTokens: compactionResult.inputTokens,
+          compactionCount: compactionResult.compactionCount,
+          contextMaintenance: {
+            ...(session.contextMaintenance ? { ...session.contextMaintenance } : {}),
+            lastRun: Date.now(),
+            lastScore: assessment.score,
+            pending: false,
+            pendingSince: undefined,
+            pendingScore: undefined,
+            // summary: ...,  // 预留
+          },
         },
       },
-    }, storePath);
+      storePath,
+    );
+  }
+
+  /**
+   * 事件驱动扫描：只返回已标记 pending 的会话
+   */
+  async scanPending(): Promise<
+    Array<{ session: SessionEntry; sessionKey: string; score: number }>
+  > {
+    const storePath = resolveStorePath(this.workspaceDir);
+    const store = loadSessionStore(storePath);
+
+    const results: Array<{ session: SessionEntry; sessionKey: string; score: number }> = [];
+
+    for (const [sessionKey, session] of Object.entries(store)) {
+      if (!session || !session.sessionFile) {
+        continue;
+      }
+      if (!session.contextMaintenance?.pending) {
+        continue;
+      }
+
+      const assessment = assessWorthiness(session, this.config);
+      results.push({ session, sessionKey, score: assessment.score });
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results;
   }
 }

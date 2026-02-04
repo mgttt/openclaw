@@ -66,6 +66,12 @@ import { buildModelAliasLines, resolveModel } from "./model.js";
 import { buildEmbeddedSandboxInfo } from "./sandbox-info.js";
 import { prewarmSessionFile, trackSessionManagerAccess } from "./session-manager-cache.js";
 import {
+  deriveStateFromCompactionSummary,
+  formatSessionStateForPrompt,
+  loadSessionState,
+  saveSessionState,
+} from "./session-state.js";
+import {
   applySystemPromptOverrideToSession,
   buildEmbeddedSystemPrompt,
   createSystemPromptOverride,
@@ -327,11 +333,14 @@ export async function compactEmbeddedPiSessionDirect(
       moduleUrl: import.meta.url,
     });
     const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
+    const persistedState = await loadSessionState(params.sessionFile);
+    const statePrompt = persistedState ? `\n\n${formatSessionStateForPrompt(persistedState)}` : "";
+
     const appendPrompt = buildEmbeddedSystemPrompt({
       workspaceDir: effectiveWorkspace,
       defaultThinkLevel: params.thinkLevel,
       reasoningLevel: params.reasoningLevel ?? "off",
-      extraSystemPrompt: params.extraSystemPrompt,
+      extraSystemPrompt: `${params.extraSystemPrompt ?? ""}${statePrompt}`.trim() || undefined,
       ownerNumbers: params.ownerNumbers,
       reasoningTagHint,
       heartbeatPrompt: isDefaultAgent
@@ -432,6 +441,15 @@ export async function compactEmbeddedPiSessionDirect(
           session.agent.replaceMessages(limited);
         }
         const result = await session.compact(params.customInstructions);
+
+        // Update external session state file (best-effort, no extra LLM call)
+        try {
+          const nextState = deriveStateFromCompactionSummary(result.summary, persistedState);
+          await saveSessionState(params.sessionFile, nextState);
+        } catch {
+          // ignore state update failures
+        }
+
         // Estimate tokens after compaction by summing token estimates for remaining messages
         let tokensAfter: number | undefined;
         try {

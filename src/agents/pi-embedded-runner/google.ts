@@ -238,6 +238,61 @@ type ModelSnapshotEntry = {
 
 const MODEL_SNAPSHOT_CUSTOM_TYPE = "model-snapshot";
 
+function foldToolOutputs(messages: AgentMessage[]): AgentMessage[] {
+  let changed = false;
+  const seen = new Set<string>();
+  const maxText = 4000;
+  const keepHead = 700;
+
+  const out = messages.map((msg) => {
+    if (!msg || typeof msg !== "object" || msg.role !== "toolResult") {
+      return msg;
+    }
+    const toolMsg = msg;
+    const content = toolMsg.content;
+    if (!Array.isArray(content)) {
+      return msg;
+    }
+
+    const next = content.map((block) => {
+      if (!block || typeof block !== "object") {
+        return block;
+      }
+      if ((block as { type?: unknown }).type !== "text") {
+        return block;
+      }
+      const text = (block as { text?: unknown }).text;
+      if (typeof text !== "string") {
+        return block;
+      }
+
+      const key = `${toolMsg.toolName ?? "tool"}:${text.slice(0, 2000)}`;
+      if (seen.has(key)) {
+        changed = true;
+        return {
+          ...(block as Record<string, unknown>),
+          text: "(duplicate tool output omitted)",
+        } as typeof block;
+      }
+      seen.add(key);
+
+      if (text.length <= maxText) {
+        return block;
+      }
+      changed = true;
+      const head = text.slice(0, keepHead);
+      return {
+        ...(block as Record<string, unknown>),
+        text: `${head}\n…(tool output truncated; see session log / full output file if provided)`,
+      } as typeof block;
+    });
+
+    return { ...toolMsg, content: next } as AgentMessage;
+  });
+
+  return changed ? out : messages;
+}
+
 function readLastModelSnapshot(sessionManager: SessionManager): ModelSnapshotEntry | null {
   try {
     const entries = sessionManager.getEntries();
@@ -350,9 +405,13 @@ export async function sanitizeSessionHistory(params: {
     ? sanitizeAntigravityThinkingBlocks(sanitizedImages)
     : sanitizedImages;
   const sanitizedToolCalls = sanitizeToolCallInputs(sanitizedThinking);
+
+  // Fold noisy tool outputs to keep history dense (summary + pointer), instead of carrying megabytes
+  const foldedTools = foldToolOutputs(sanitizedToolCalls);
+
   const repairedTools = policy.repairToolUseResultPairing
-    ? sanitizeToolUseResultPairing(sanitizedToolCalls)
-    : sanitizedToolCalls;
+    ? sanitizeToolUseResultPairing(foldedTools)
+    : foldedTools;
 
   const isOpenAIResponsesApi =
     params.modelApi === "openai-responses" || params.modelApi === "openai-codex-responses";
