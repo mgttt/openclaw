@@ -49,10 +49,12 @@ function assessTokenUsage(session: SessionEntry, config: OpenClawConfig): number
   const totalTokens = session.totalTokens || 0;
   if (totalTokens === 0) return 0;
 
-  // 获取模型的 token budget：优先使用 session.contextTokens，其次 fallback 100k
-  // (session store 会记录 contextTokens；status 里也会显示)
-  const budget =
-    session.contextTokens && session.contextTokens > 0 ? session.contextTokens : 100_000;
+  // Token budget is the *max context window*, not the current context usage.
+  // session.contextTokens may represent either depending on source, so only trust it
+  // when it looks like a real "budget" (>= totalTokens). Otherwise fallback.
+  const budgetCandidate =
+    session.contextTokens && session.contextTokens > 0 ? session.contextTokens : 0;
+  const budget = budgetCandidate >= totalTokens ? budgetCandidate : 100_000;
 
   const usage = totalTokens / budget;
 

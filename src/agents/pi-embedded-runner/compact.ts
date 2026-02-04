@@ -79,6 +79,8 @@ import {
 import { splitSdkTools } from "./tool-split.js";
 import { describeUnknownError, mapThinkingLevel, resolveExecToolDefaults } from "./utils.js";
 
+let lastSessionStateWriteWarnAt = 0;
+
 export type CompactEmbeddedPiSessionParams = {
   sessionId: string;
   sessionKey?: string;
@@ -446,8 +448,15 @@ export async function compactEmbeddedPiSessionDirect(
         try {
           const nextState = deriveStateFromCompactionSummary(result.summary, persistedState);
           await saveSessionState(params.sessionFile, nextState);
-        } catch {
-          // ignore state update failures
+        } catch (err) {
+          // Best-effort: state write can fail on RO mounts / perms.
+          // Don't spam logs; warn at most once per 10 minutes.
+          const now = Date.now();
+          if (now - lastSessionStateWriteWarnAt > 10 * 60 * 1000) {
+            lastSessionStateWriteWarnAt = now;
+            const msg = err instanceof Error ? err.message : String(err);
+            log.warn(`Session state write failed (path=${params.sessionFile}.state.json): ${msg}`);
+          }
         }
 
         // Estimate tokens after compaction by summing token estimates for remaining messages

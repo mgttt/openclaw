@@ -76,18 +76,30 @@ export function startContextMaintenanceTimer(): ReturnType<typeof setInterval> {
 
   log.info(`[Timer] 启动定时器，间隔 ${intervalMs / 1000 / 60} 分钟`);
 
+  // 防止并发重入：如果一次维护超过 interval（或卡住），下一轮直接跳过。
+  let running = false;
+  const runOnce = async (label: string): Promise<void> => {
+    if (running) {
+      log.warn(`[Timer] 跳过本轮（上一轮仍在运行）: ${label}`);
+      return;
+    }
+    running = true;
+    try {
+      await runContextMaintenance();
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.error(`[Error] ${label}失败: ${error}`);
+    } finally {
+      running = false;
+    }
+  };
+
   // 立即执行一次
-  void runContextMaintenance().catch((err) => {
-    const error = err instanceof Error ? err.message : String(err);
-    log.error(`[Error] 初始扫描失败: ${error}`);
-  });
+  void runOnce("初始扫描");
 
   // 定时执行
   const timer = setInterval(() => {
-    void runContextMaintenance().catch((err) => {
-      const error = err instanceof Error ? err.message : String(err);
-      log.error(`[Error] 定时扫描失败: ${error}`);
-    });
+    void runOnce("定时扫描");
   }, intervalMs);
 
   return timer;

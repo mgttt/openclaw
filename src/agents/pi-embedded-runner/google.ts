@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type { SessionManager } from "@mariozechner/pi-coding-agent";
 import type { TSchema } from "@sinclair/typebox";
+import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { TranscriptPolicy } from "../transcript-policy.js";
 import { registerUnhandledRejectionHandler } from "../../infra/unhandled-rejections.js";
@@ -242,7 +243,8 @@ function foldToolOutputs(messages: AgentMessage[]): AgentMessage[] {
   let changed = false;
   const seen = new Set<string>();
   const maxText = 4000;
-  const keepHead = 700;
+  const keepHead = 500;
+  const keepTail = 500;
 
   const out = messages.map((msg) => {
     if (!msg || typeof msg !== "object" || msg.role !== "toolResult") {
@@ -266,7 +268,11 @@ function foldToolOutputs(messages: AgentMessage[]): AgentMessage[] {
         return block;
       }
 
-      const key = `${toolMsg.toolName ?? "tool"}:${text.slice(0, 2000)}`;
+      // Dedupe with a stable hash (avoid head-only collisions).
+      // NOTE: We intentionally hash the *full* text so commands with identical headers
+      // but different tails don't get mis-deduped.
+      const hash = crypto.createHash("sha1").update(text).digest("hex");
+      const key = `${toolMsg.toolName ?? "tool"}:${text.length}:${hash}`;
       if (seen.has(key)) {
         changed = true;
         return {
@@ -281,9 +287,13 @@ function foldToolOutputs(messages: AgentMessage[]): AgentMessage[] {
       }
       changed = true;
       const head = text.slice(0, keepHead);
+      const tail = text.slice(Math.max(0, text.length - keepTail));
       return {
         ...(block as Record<string, unknown>),
-        text: `${head}\n…(tool output truncated; see session log / full output file if provided)`,
+        text:
+          `${head}\n` +
+          `…(tool output truncated; head+tail kept, len=${text.length})\n` +
+          `${tail}`,
       } as typeof block;
     });
 
