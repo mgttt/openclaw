@@ -21,6 +21,7 @@ import { deliverReplies } from "./bot/delivery.js";
 import { resolveTelegramDraftStreamingChunking } from "./draft-chunking.js";
 import { createTelegramDraftStream } from "./draft-stream.js";
 import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
+import { selectModelForMessage, formatTierSelection } from "./model-tier-router.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
 
@@ -224,9 +225,48 @@ export const dispatchTelegramMessage = async ({
     skippedNonSilent: 0,
   };
 
+  // 🚀 Tier-based model routing
+  const messageText = msg.text ?? msg.caption ?? "";
+  const hasHistory = Boolean(historyKey && groupHistories?.get(historyKey)?.length);
+  const hasMedia = Boolean(ctxPayload.MediaPath || ctxPayload.MediaPaths);
+  const isCommand = messageText.startsWith("/");
+  
+  const { tier, complexity, config: tierConfig } = selectModelForMessage({
+    text: messageText,
+    cfg,
+    accountId: route.accountId,
+    context: {
+      hasHistory,
+      hasMedia,
+      isCommand,
+      historyLength: historyKey ? groupHistories?.get(historyKey)?.length ?? 0 : 0,
+    },
+  });
+  
+  // Log tier selection
+  logVerbose(formatTierSelection({ tier, complexity, text: messageText }));
+  
+  // Pass tier model to context for get-reply to use
+  const enhancedCfg = {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      list: cfg.agents?.list?.map((agent) =>
+        agent.id === route.agentId
+          ? {
+              ...agent,
+              model: tierConfig.enabled
+                ? `${tier.model.provider}/${tier.model.model}`
+                : agent.model,
+            }
+          : agent
+      ),
+    },
+  };
+
   const { queuedFinal } = await dispatchReplyWithBufferedBlockDispatcher({
     ctx: ctxPayload,
-    cfg,
+    cfg: enhancedCfg,
     dispatcherOptions: {
       responsePrefix: prefixContext.responsePrefix,
       responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
