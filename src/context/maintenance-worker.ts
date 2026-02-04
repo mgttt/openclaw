@@ -2,7 +2,8 @@
 
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions/types.js";
-import { loadSessionStore, updateSessionStore, resolveStorePath } from "../config/sessions/store.js";
+import { loadSessionStore, updateSessionStore } from "../config/sessions/store.js";
+import { resolveStorePath } from "../config/sessions/paths.js";
 import { compactEmbeddedPiSession } from "../agents/pi-embedded-runner/compact.js";
 import { resolveOpenClawAgentDir } from "../agents/agent-paths.js";
 import { assessWorthiness } from "./worthiness-assessor.js";
